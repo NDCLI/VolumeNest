@@ -1,0 +1,14 @@
+# .NET build output
+**/bin/
+**/obj/
+
+# Published binaries and installers
+publish/
+
+# Visual Studio / user files
+.vs/
+*.user
+*.suo
+
+# Local Claude Code permissions may contain machine-specific paths
+.claude/settings.local.json
