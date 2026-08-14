@@ -34,11 +34,13 @@ public sealed partial class MixerForm : Form
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool UnregisterHotKey(IntPtr hWnd, int id);
 
-    private const int HotkeyId     = 1;
-    private const uint MOD_ALT     = 0x0001;
-    private const uint MOD_CONTROL = 0x0002;
-    private const int WM_HOTKEY     = 0x0312;
+    private const int HotkeyId      = 1;
+    private const uint MOD_ALT      = 0x0001;
+    private const uint MOD_CONTROL  = 0x0002;
+    private const int WM_HOTKEY      = 0x0312;
     private const int WM_ACTIVATEAPP = 0x001C;
+    private const int WM_ACTIVATE    = 0x0006;
+    private const int WA_INACTIVE    = 0;
 
     // ── Layout ────────────────────────────────────────────────────────────
     private const int FormW        = 360;
@@ -138,10 +140,19 @@ public sealed partial class MixerForm : Form
     protected override void WndProc(ref Message m)
     {
         if (m.Msg == WM_HOTKEY && m.WParam.ToInt32() == HotkeyId)
+        {
             ToggleFlyout();
+        }
+        else if (m.Msg == WM_ACTIVATE && (m.WParam.ToInt32() & 0xFFFF) == WA_INACTIVE
+                 && _openDropDownCount == 0)
+        {
+            HideFlyout();
+        }
         else if (m.Msg == WM_ACTIVATEAPP && m.WParam == IntPtr.Zero
                  && _openDropDownCount == 0)
+        {
             HideFlyout();
+        }
 
         base.WndProc(ref m);
     }
