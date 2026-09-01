@@ -34,6 +34,9 @@ public sealed partial class MixerForm : Form
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool UnregisterHotKey(IntPtr hWnd, int id);
 
+    [LibraryImport("user32.dll")]
+    private static partial IntPtr GetForegroundWindow();
+
     private const int HotkeyId      = 1;
     private const uint MOD_ALT      = 0x0001;
     private const uint MOD_CONTROL  = 0x0002;
@@ -66,6 +69,7 @@ public sealed partial class MixerForm : Form
     private List<DeviceInfo> _renderDevices = new();
     private List<DeviceInfo> _captureDevices = new();
     private int _openDropDownCount;
+    private bool _focusCheckQueued;
     private Form? _activeRoutingPopup;
     private Action? _pendingRoutingOpen;
 
@@ -105,10 +109,7 @@ public sealed partial class MixerForm : Form
         _timer = new System.Windows.Forms.Timer { Interval = 1000 };
         _timer.Tick += (_, _) => SyncValues();
 
-        Deactivate += (_, _) =>
-        {
-            if (_openDropDownCount == 0) HideFlyout();
-        };
+        Deactivate += (_, _) => QueueHideIfFocusLeftApp();
         KeyDown += (_, e) => { if (e.KeyCode == Keys.Escape) HideFlyout(); };
     }
 
@@ -143,15 +144,13 @@ public sealed partial class MixerForm : Form
         {
             ToggleFlyout();
         }
-        else if (m.Msg == WM_ACTIVATE && (m.WParam.ToInt32() & 0xFFFF) == WA_INACTIVE
-                 && _openDropDownCount == 0)
+        else if (m.Msg == WM_ACTIVATE && (m.WParam.ToInt32() & 0xFFFF) == WA_INACTIVE)
         {
-            HideFlyout();
+            QueueHideIfFocusLeftApp();
         }
-        else if (m.Msg == WM_ACTIVATEAPP && m.WParam == IntPtr.Zero
-                 && _openDropDownCount == 0)
+        else if (m.Msg == WM_ACTIVATEAPP && m.WParam == IntPtr.Zero)
         {
-            HideFlyout();
+            QueueHideIfFocusLeftApp();
         }
 
         base.WndProc(ref m);
@@ -176,6 +175,28 @@ public sealed partial class MixerForm : Form
     {
         _timer.Stop();
         Hide();
+    }
+
+    private void QueueHideIfFocusLeftApp()
+    {
+        if (_focusCheckQueued || IsDisposed || !IsHandleCreated) return;
+
+        _focusCheckQueued = true;
+        BeginInvoke(() =>
+        {
+            _focusCheckQueued = false;
+
+            if (!Visible || _openDropDownCount != 0 || OwnsForegroundWindow()) return;
+            HideFlyout();
+        });
+    }
+
+    private bool OwnsForegroundWindow()
+    {
+        IntPtr foreground = GetForegroundWindow();
+        if (foreground == Handle) return true;
+
+        return OwnedForms.Any(form => !form.IsDisposed && form.Handle == foreground);
     }
 
     private void PositionNearTray()
@@ -359,7 +380,11 @@ public sealed partial class MixerForm : Form
 
         _openDropDownCount++;
         popup.Deactivate += (_, _) => popup.Close();
-        popup.FormClosed += (_, _) => { _openDropDownCount--; if (_openDropDownCount == 0) Activate(); };
+        popup.FormClosed += (_, _) =>
+        {
+            _openDropDownCount--;
+            QueueHideIfFocusLeftApp();
+        };
         popup.Show(this);
     }
 
@@ -581,7 +606,7 @@ public sealed partial class MixerForm : Form
         {
             if (_activeRoutingPopup == popup) _activeRoutingPopup = null;
             _openDropDownCount--;
-            if (_openDropDownCount == 0) Activate();
+            QueueHideIfFocusLeftApp();
         };
         popup.Show(this);
     }
